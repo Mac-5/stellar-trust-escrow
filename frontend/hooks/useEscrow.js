@@ -5,7 +5,67 @@ import useSWR from 'swr';
 import useSWRInfinite from 'swr/infinite';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-const fetcher = (url) => fetch(url, { credentials: 'include' }).then((r) => r.json());
+
+// Response fields that must never be echoed into a client-facing error message.
+const SENSITIVE_FIELD_PATTERN = /token|secret|password|authorization|cookie|key/i;
+
+/**
+ * Redact any object keys that look like credentials before they can end up
+ * in an error message shown to the user or sent to logging.
+ */
+function redactSensitiveFields(payload) {
+  if (!payload || typeof payload !== 'object') return payload;
+  const redacted = {};
+  for (const [key, value] of Object.entries(payload)) {
+    redacted[key] = SENSITIVE_FIELD_PATTERN.test(key) ? '[redacted]' : value;
+  }
+  return redacted;
+}
+
+/**
+ * Fetch wrapper that turns a failed request into an Error carrying enough
+ * context to actually diagnose the failure (HTTP status + server-provided
+ * reason), instead of the generic "Internal error" SWR would otherwise
+ * surface. Sensitive fields (tokens/secrets/etc.) are stripped before the
+ * message is built so nothing confidential leaks into UI or logs.
+ *
+ * @param {string} url
+ * @returns {Promise<any>}
+ */
+const fetcher = async (url) => {
+  let response;
+  try {
+    response = await fetch(url, { credentials: 'include' });
+  } catch (networkErr) {
+    const error = new Error(
+      `Network error while requesting ${url}: ${networkErr.message || 'request failed to complete'}`,
+    );
+    error.cause = networkErr;
+    throw error;
+  }
+
+  let body = null;
+  try {
+    body = await response.json();
+  } catch {
+    // Response wasn't JSON (e.g. HTML error page from a proxy) — fall through
+    // with body left null; the status code still gives useful context.
+  }
+
+  if (!response.ok) {
+    const safeBody = redactSensitiveFields(body);
+    const reason =
+      safeBody?.error || safeBody?.message || response.statusText || 'Unknown error';
+    const error = new Error(
+      `Request to ${url} failed with ${response.status} ${response.statusText || ''}: ${reason}`.trim(),
+    );
+    error.status = response.status;
+    error.info = safeBody;
+    throw error;
+  }
+
+  return body;
+};
 
 // Single-escrow poll cadence — fast enough to feel live, slow enough to stay cheap at scale.
 const ESCROW_POLL_INTERVAL_MS = 30_000;

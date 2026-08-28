@@ -119,6 +119,70 @@ describe('useEscrow', () => {
   });
 });
 
+describe('useEscrow fetcher error handling', () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  async function getFetcher() {
+    // useSWR is mocked, so grab the fetcher fn the hook actually passed it.
+    renderHook(() => useEscrow(1));
+    const [, fetcherFn] = useSWR.mock.calls[useSWR.mock.calls.length - 1];
+    return fetcherFn;
+  }
+
+  it('includes HTTP status and server-provided reason in the thrown error', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      json: () => Promise.resolve({ error: 'Escrow 1 does not exist' }),
+    });
+
+    const fetcherFn = await getFetcher();
+
+    await expect(fetcherFn('http://localhost:4000/api/escrows/1')).rejects.toThrow(
+      /404.*Escrow 1 does not exist/,
+    );
+  });
+
+  it('redacts sensitive fields from the error payload', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      statusText: 'Unauthorized',
+      json: () =>
+        Promise.resolve({ error: 'Unauthorized', token: 'super-secret-value', secret: 'nope' }),
+    });
+
+    const fetcherFn = await getFetcher();
+
+    let caught;
+    try {
+      await fetcherFn('http://localhost:4000/api/escrows/1');
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeDefined();
+    expect(caught.message).not.toContain('super-secret-value');
+    expect(caught.info.token).toBe('[redacted]');
+    expect(caught.info.secret).toBe('[redacted]');
+  });
+
+  it('surfaces a network-error message when fetch itself rejects', async () => {
+    global.fetch = jest.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+
+    const fetcherFn = await getFetcher();
+
+    await expect(fetcherFn('http://localhost:4000/api/escrows/1')).rejects.toThrow(
+      /Network error.*Failed to fetch/,
+    );
+  });
+});
+
 describe('useUserEscrows', () => {
   it('returns empty escrows array', () => {
     const { result } = renderHook(() => useUserEscrows('GABC123'));
