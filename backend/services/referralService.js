@@ -2,6 +2,9 @@
  * Referral Service
  *
  * Generates unique referral codes for users.
+ * Consumed by referralController.js and rendered client-side by
+ * frontend/components/referral/ReferralCard.jsx, whose icon-only copy/share
+ * controls carry aria-labels for screen reader users.
  *
  * @module services/referralService
  */
