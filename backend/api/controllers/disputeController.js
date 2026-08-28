@@ -29,6 +29,29 @@ const VALID_SORT_ORDERS = new Set(['asc', 'desc']);
 
 const DISPUTE_MAX_LIMIT = 50;
 
+// ── Auto-resolution recommendation scoring ──────────────────────────────────
+// generateResolutionRecommendation() derives a confidence score (0-1) for
+// its suggested outcome from evidence counts. These constants document what
+// each adjustment means so the scoring logic can be tuned without guessing
+// at the meaning of bare numbers.
+
+// Starting confidence for the default "manual_review" outcome — a coin-flip
+// baseline before any evidence signal is factored in.
+const RECOMMENDATION_BASE_CONFIDENCE = 0.5;
+// Confidence bump when at least one piece of documentary (file/image)
+// evidence exists — objective evidence is a stronger signal than none.
+const FILE_EVIDENCE_CONFIDENCE_BOOST = 0.2;
+// Confidence bump applied when one party's evidence count clearly exceeds
+// the other's (see EVIDENCE_COUNT_IMBALANCE_THRESHOLD below).
+const EVIDENCE_IMBALANCE_CONFIDENCE_BOOST = 0.1;
+// Minimum lead in evidence count one party needs over the other before we
+// treat it as a meaningful imbalance worth favoring a side.
+const EVIDENCE_COUNT_IMBALANCE_THRESHOLD = 2;
+// Hard ceiling on auto-generated confidence — this is a heuristic
+// recommendation, never certainty, so it never reaches 1.0 and always
+// leaves room for human/arbiter judgment.
+const RECOMMENDATION_MAX_CONFIDENCE = 0.9;
+
 const listDisputes = async (req, res) => {
   try {
     const { take, parsedCursor, sortField, sortDir } = parseCursorPagination(
@@ -651,26 +674,26 @@ function generateResolutionRecommendation(dispute, evidence) {
 
   let recommendation = {
     suggestedOutcome: 'manual_review',
-    confidence: 0.5,
+    confidence: RECOMMENDATION_BASE_CONFIDENCE,
     reasoning: [],
   };
 
   if (fileEvidence > 0) {
-    recommendation.confidence += 0.2;
+    recommendation.confidence += FILE_EVIDENCE_CONFIDENCE_BOOST;
     recommendation.reasoning.push('Documentary evidence provided');
   }
 
-  if (clientEvidence > freelancerEvidence + 2) {
+  if (clientEvidence > freelancerEvidence + EVIDENCE_COUNT_IMBALANCE_THRESHOLD) {
     recommendation.suggestedOutcome = 'favor_client';
-    recommendation.confidence += 0.1;
+    recommendation.confidence += EVIDENCE_IMBALANCE_CONFIDENCE_BOOST;
     recommendation.reasoning.push('Client provided significantly more evidence');
-  } else if (freelancerEvidence > clientEvidence + 2) {
+  } else if (freelancerEvidence > clientEvidence + EVIDENCE_COUNT_IMBALANCE_THRESHOLD) {
     recommendation.suggestedOutcome = 'favor_freelancer';
-    recommendation.confidence += 0.1;
+    recommendation.confidence += EVIDENCE_IMBALANCE_CONFIDENCE_BOOST;
     recommendation.reasoning.push('Freelancer provided significantly more evidence');
   }
 
-  recommendation.confidence = Math.min(recommendation.confidence, 0.9);
+  recommendation.confidence = Math.min(recommendation.confidence, RECOMMENDATION_MAX_CONFIDENCE);
 
   return recommendation;
 }

@@ -222,6 +222,29 @@ export default function WalletLedger() {
     setExpandedId((prev) => (prev === id ? null : id));
   };
 
+  // Rows are already <button>s, so Enter/Space toggle natively. We still
+  // wire Enter explicitly for robustness and add Escape so a keyboard user
+  // can collapse an expanded row without hunting for the toggle again.
+  const handleRowKeyDown = (event, id) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      toggleExpand(id);
+    } else if (event.key === 'Escape' && expandedId === id) {
+      event.preventDefault();
+      setExpandedId(null);
+      event.currentTarget.focus();
+    }
+  };
+
+  // The "view on explorer" link is nested inside the row button; stop its
+  // Enter/Space keypress from also bubbling up and re-toggling the row,
+  // matching the existing onClick stopPropagation behavior.
+  const handleLinkKeyDown = (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.stopPropagation();
+    }
+  };
+
   if (!isConnected) {
     return (
       <div
@@ -276,7 +299,8 @@ export default function WalletLedger() {
             >
               <button
                 onClick={() => toggleExpand(op.id)}
-                className="w-full text-left bg-gray-900/50 border border-gray-800 rounded-xl p-4 transition-all duration-200 hover:border-indigo-500/40 hover:shadow-[0_0_15px_rgba(99,102,241,0.15)] animate-fade-in focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                onKeyDown={(e) => handleRowKeyDown(e, op.id)}
+                className="w-full text-left bg-gray-900/50 border border-gray-800 rounded-xl p-4 transition-all duration-200 hover:border-indigo-500/40 hover:shadow-[0_0_15px_rgba(99,102,241,0.15)] animate-fade-in focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
                 aria-expanded={isExpanded}
                 aria-controls={`tx-detail-${op.id}`}
               >
@@ -310,7 +334,8 @@ export default function WalletLedger() {
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={(e) => e.stopPropagation()}
-                      className="text-gray-500 hover:text-indigo-400 transition-colors p-1 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                      onKeyDown={handleLinkKeyDown}
+                      className="text-gray-500 hover:text-indigo-400 transition-colors p-1 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
                       aria-label={`View on Stellar Expert for ${OPERATION_LABELS[op.type] || op.rawType}`}
                     >
                       <ExternalLink className="w-4 h-4" />
