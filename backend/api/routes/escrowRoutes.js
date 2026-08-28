@@ -77,7 +77,10 @@ router.get(
   validatePagination,
   cacheResponse({
     ttl: TTL.LIST,
-    tags: (req) => ['escrows', `escrow:list:${req.query.cursor || 'first'}`],
+    // Explicit absence check (not a bare `||` truthy check) so a
+    // theoretically valid but falsy cursor value can't collide with the
+    // "first page" tag — see the null-check convention in escrowController.js.
+    tags: (req) => ['escrows', `escrow:list:${req.query.cursor == null ? 'first' : req.query.cursor}`],
   }),
   conditionalGet(),
   escrowController.listEscrows,

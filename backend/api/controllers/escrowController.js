@@ -6,6 +6,15 @@
  *
  * Status-changing operations (releaseFunds, raiseDispute) invalidate the
  * relevant cache tags directly so stale data is never served.
+ *
+ * Null/undefined check convention used throughout this file:
+ *  - `value == null` / `value != null` — "is this absent?", where an
+ *    explicit `null` and a missing/`undefined` value should be treated the
+ *    same way (e.g. a cache lookup miss, a not-yet-assigned id).
+ *  - `value === undefined` — "was this key provided by the caller at all?",
+ *    used only where an explicit `null` is itself a meaningful, distinct
+ *    input (e.g. "clear this field" vs. "leave it untouched" in
+ *    cloneEscrow/broadcastCreateEscrow below). Each such spot is commented.
  */
 
 import { stringify } from 'csv-stringify';
@@ -237,7 +246,7 @@ const exportEscrowsCsv = async (req, res) => {
 
     let cursorId = null;
     for (;;) {
-      const batchWhere = cursorId !== null ? { ...where, id: { gt: cursorId } } : where;
+      const batchWhere = cursorId != null ? { ...where, id: { gt: cursorId } } : where;
       const batch = await prisma.escrow.findMany({
         where: batchWhere,
         orderBy: { id: 'asc' },
@@ -372,6 +381,10 @@ const broadcastCreateEscrow = async (req, res) => {
     }
 
     let parsedFundingDeadline;
+    // Exception to the file's `== null` convention: an explicit `null` here
+    // is invalid input (a deadline was named but given no value), not "no
+    // deadline was requested" — so it must still fail the validation below
+    // rather than being silently treated as absent.
     if (fundingDeadline !== undefined) {
       parsedFundingDeadline = new Date(fundingDeadline);
       if (Number.isNaN(parsedFundingDeadline.getTime())) {
@@ -410,7 +423,7 @@ const broadcastCreateEscrow = async (req, res) => {
 
     // Upsert the escrow row so the DB reflects the on-chain state immediately,
     // even before the indexer's next polling tick.
-    if (escrowId !== null) {
+    if (escrowId != null) {
       await prisma.escrow.upsert({
         where: { id: escrowId },
         create: {
@@ -453,7 +466,7 @@ const updateEscrowMetadata = async (req, res) => {
     const id = BigInt(req.params.id);
     const { metadata } = req.body;
 
-    if (metadata === undefined || metadata === null || typeof metadata !== 'object') {
+    if (metadata == null || typeof metadata !== 'object') {
       return res.status(400).json({ error: 'metadata object is required' });
     }
 
@@ -575,6 +588,11 @@ const cloneEscrow = async (req, res) => {
     const { title: titleOverride, amount: amountOverride, deadline: deadlineOverride } =
       req.body || {};
 
+    // Exception to the file's `== null` convention: `undefined` here means
+    // "no override was sent" (keep the source value), while an explicit
+    // `null` on deadlineOverride means "clear the deadline" — a distinct,
+    // meaningful input from "not provided". amountOverride has no such
+    // null case, so any non-undefined value must be a string or number.
     if (
       amountOverride !== undefined &&
       typeof amountOverride !== 'string' &&
@@ -766,7 +784,7 @@ async function getCachedStats(cacheKey, dbQuery) {
   try {
     // Try to get from cache
     const cached = await cache.get(cacheKey);
-    if (cached !== null && cached !== undefined) {
+    if (cached != null) {
       console.log(`[Cache] Stats hit: ${cacheKey}`);
       return JSON.parse(cached);
     }

@@ -349,6 +349,35 @@ describe('escrowController', () => {
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.body.error).toBe('fundingDeadline must be a valid date');
     });
+
+    // Regression: omitted (undefined) and explicit-null fundingDeadline must
+    // NOT be treated identically. Collapsing the `!== undefined` guard to a
+    // loose `!= null` check would silently accept `fundingDeadline: null` as
+    // "no deadline requested" instead of validating it — the exact class of
+    // bug the null/undefined-check standardization in escrowController.js
+    // was meant to prevent.
+    it('omitting fundingDeadline entirely succeeds with no deadline validation', async () => {
+      submitTransactionMock.mockResolvedValue({
+        hash: 'tx_no_deadline',
+        status: 'SUCCESS',
+        returnValue: null,
+      });
+      const req = { body: { signedXdr: 'AAAA...' } };
+      const res = createMockRes();
+
+      await escrowController.broadcastCreateEscrow(req, res);
+
+      expect(res.statusCode).toBe(200);
+    });
+
+    it('rejects an explicit null fundingDeadline instead of treating it as "not provided"', async () => {
+      const req = { body: { signedXdr: 'AAAA...', fundingDeadline: null } };
+      const res = createMockRes();
+
+      await escrowController.broadcastCreateEscrow(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+    });
   });
 
   describe('getMilestones', () => {
