@@ -24,6 +24,15 @@ import CharCountTextarea from '../ui/CharCountTextarea';
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 const WS_BASE = API_BASE.replace(/^http/, 'ws');
 
+// Messages fetched per history page — balances round-trip count against
+// payload size for a typical dispute thread.
+const MESSAGE_PAGE_SIZE = 30;
+// How long to wait after the last keystroke before broadcasting "stopped
+// typing" — long enough to survive brief pauses, short enough to feel live.
+const TYPING_STOP_DELAY_MS = 2000;
+// Server-enforced cap on a single chat message's length.
+const MAX_MESSAGE_LENGTH = 1000;
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function formatTime(ts) {
@@ -134,7 +143,7 @@ export default function DisputeChat({ escrowId, address, role, token }) {
       setLoadingHistory(true);
       try {
         const res = await fetch(
-          `${API_BASE}/api/disputes/${escrowId}/messages?page=${p}&limit=30`,
+          `${API_BASE}/api/disputes/${escrowId}/messages?page=${p}&limit=${MESSAGE_PAGE_SIZE}`,
           { headers: token ? { Authorization: `Bearer ${token}` } : {} },
         );
         if (!res.ok) return;
@@ -230,7 +239,7 @@ export default function DisputeChat({ escrowId, address, role, token }) {
       clearTimeout(typingTimer.current);
       typingTimer.current = setTimeout(() => {
         wsRef.current?.send(JSON.stringify({ type: 'stop_typing', payload: { address } }));
-      }, 2000);
+      }, TYPING_STOP_DELAY_MS);
     }
   };
 
@@ -365,7 +374,7 @@ export default function DisputeChat({ escrowId, address, role, token }) {
           onKeyDown={handleKeyDown}
           placeholder="Type a message… (Enter to send)"
           rows={1}
-          maxLength={1000}
+          maxLength={MAX_MESSAGE_LENGTH}
           className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-sm
                      text-white placeholder-gray-500 resize-none focus:outline-none
                      focus:border-indigo-500 transition-colors max-h-32 overflow-y-auto"
